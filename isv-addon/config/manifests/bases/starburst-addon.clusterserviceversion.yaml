@@ -1,0 +1,53 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: isv-addon.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: ISVAddon is the Schema for the isvaddons API
+      displayName: ISV Addon
+      kind: ISVAddon
+      name: isvaddons.example.com.example.com
+      specDescriptors:
+      - description: Foo is an example field of ISVAddon. Edit isvaddon_types.go
+          to remove/update
+        displayName: Foo
+        path: foo
+        x-descriptors:
+        - urn:alm:descriptor:com.tectonic.ui:text
+      version: v1alpha1
+  description: New Design ISV Addon
+  displayName: ISV Addon
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: true
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: false
+    type: AllNamespaces
+  keywords:
+  - key
+  - word
+  - s
+  links:
+  - name: ISV Addon
+    url: https://isv-addon.domain
+  maturity: alpha
+  provider:
+    name: Me
+  version: 0.0.0
