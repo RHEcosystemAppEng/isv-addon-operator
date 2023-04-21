@@ -39,11 +39,6 @@ spec:
             type: object
           spec:
             description: ISVAddonSpec defines the desired state of ISVAddon
-            properties:
-              foo:
-                description: Foo is an example field of ISVAddon. Edit isvaddon_types.go
-                  to remove/update
-                type: string
             type: object
           status:
             description: ISVAddonStatus defines the observed state of ISVAddon

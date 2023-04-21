@@ -11,19 +11,12 @@ spec:
   customresourcedefinitions:
     owned:
     - description: ISVAddon is the Schema for the isvaddons API
-      displayName: ISV Addon
+      displayName: ISVAddon
       kind: ISVAddon
       name: isvaddons.example.com.example.com
-      specDescriptors:
-      - description: Foo is an example field of ISVAddon. Edit isvaddon_types.go
-          to remove/update
-        displayName: Foo
-        path: foo
-        x-descriptors:
-        - urn:alm:descriptor:com.tectonic.ui:text
       version: v1alpha1
-  description: New Design ISV Addon
-  displayName: ISV Addon
+  description: A template operator for Red Hat Isv's
+  displayName: Isv Addon Operator
   icon:
   - base64data: ""
     mediatype: ""
@@ -32,22 +25,27 @@ spec:
       deployments: null
     strategy: ""
   installModes:
-  - supported: true
+  - supported: false
     type: OwnNamespace
   - supported: false
     type: SingleNamespace
   - supported: false
     type: MultiNamespace
-  - supported: false
+  - supported: true
     type: AllNamespaces
   keywords:
-  - key
-  - word
-  - s
+  - Isv
+  - Operator
+  - Template
   links:
-  - name: ISV Addon
+  - name: Isv Addon
     url: https://isv-addon.domain
+  maintainers:
+  - email: tmihalac@redhat.com
+    name: Theodor Mihalache
+  - email: tsisodia@redhat.com
+    name: Twinkll Sisodia
   maturity: alpha
   provider:
-    name: Me
+    name: Red Hat
   version: 0.0.0
