@@ -11,11 +11,9 @@ And a *Finalizer* for cleaning up the *Enterprise* CR.
 
 ## Repository content
 
-Next to this document, you'll find the template operator with its bundle manifest (deployed to *quay.io*).
-
-The [isv-addon](/isv-addon) controller is the shell for the new design, this part will be implemented in our current operator, if this design gets accepted.
-
-The [olm-catalog](/olm-catalog) folder holds the sources for the OLM catalog.
+Next to this document, you'll find the template operator with its bundle manifest (deployed to *quay.io*).<br/>
+The [isv-addon](/isv-addon) controller is the shell for the new design, this part will be implemented in our current operator, if this design gets accepted.<br/>
+The [olm-catalog](/olm-catalog) folder holds the sources for the OLM catalog.<br/>
 
 ## Design walkthrough
 
