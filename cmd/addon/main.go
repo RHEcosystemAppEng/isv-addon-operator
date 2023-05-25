@@ -17,8 +17,17 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
+	"github.com/example/isv-addon-operator/pkg/isv"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"os"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -95,9 +104,47 @@ func main() {
 		os.Exit(1)
 	}
 
+	c, err := client.New(ctrlconfig.GetConfigOrDie(), client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "failed to create client to jumpstart addon")
+		os.Exit(1)
+	}
+
+	if err := jumpstartAddon(c); err != nil {
+		setupLog.Error(err, "failed to jumpstart addon")
+		os.Exit(1)
+	}
+
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func jumpstartAddon(client client.Client) error {
+	starburstAddon := &v1alpha1.ISVAddon{}
+	crName := isv.CommonISVInstance.GetCRName()
+	crNamespace := isv.CommonISVInstance.GetCRNamespace()
+	err := client.Get(context.TODO(), types.NamespacedName{
+		Name:      crName,
+		Namespace: crNamespace,
+	}, starburstAddon)
+	isNotFound := k8serrors.IsNotFound(err)
+	if err != nil && !isNotFound {
+		return fmt.Errorf("failed to fetch StarburstAddon CR %s in %s: %w", crName, crNamespace, err)
+	}
+
+	starburstAddon.ObjectMeta = metav1.ObjectMeta{
+		Name:      crName,
+		Namespace: crNamespace,
+	}
+
+	result, err := controllerutil.CreateOrPatch(context.TODO(), client, starburstAddon, nil)
+
+	if err != nil {
+		return fmt.Errorf("failed to reconcile StarburstAddon CR %s in %s, result: %v. error: %w", crName, crNamespace, result, err)
+	}
+
+	return nil
 }
