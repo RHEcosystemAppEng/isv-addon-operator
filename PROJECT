@@ -5,7 +5,7 @@ plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: isv-addon
-repo: github.com/example/isv-addon-operator
+repo: github.com/RHEcosystemAppEng/isv-addon-operator
 resources:
 - api:
     crdVersion: v1
@@ -14,6 +14,6 @@ resources:
   domain: example.com
   group: example.com
   kind: ISVAddon
-  path: github.com/example/isv-addon-operator/api/v1alpha1
+  path: github.com/RHEcosystemAppEng/isv-addon-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

@@ -20,7 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/example/isv-addon-operator/pkg/isv"
+	"github.com/isv-addon-operator/pkg/isv"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -40,8 +40,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/example/isv-addon-operator/api/v1alpha1"
-	"github.com/example/isv-addon-operator/pkg/addon"
+	"github.com/isv-addon-operator/api/v1alpha1"
+	"github.com/isv-addon-operator/pkg/addon"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	//+kubebuilder:scaffold:imports
 )
@@ -124,8 +124,8 @@ func main() {
 
 func jumpstartAddon(client client.Client) error {
 	starburstAddon := &v1alpha1.ISVAddon{}
-	crName := isv.CommonISVInstance.GetCRName()
-	crNamespace := isv.CommonISVInstance.GetCRNamespace()
+	crName := isv.CommonISVInstance.GetAddonCRName()
+	crNamespace := isv.CommonISVInstance.GetAddonCRNamespace()
 	err := client.Get(context.TODO(), types.NamespacedName{
 		Name:      crName,
 		Namespace: crNamespace,

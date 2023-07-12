@@ -20,7 +20,7 @@ import (
 	"flag"
 	"os"
 
-	"github.com/example/isv-addon-operator/pkg/webhook"
+	"github.com/isv-addon-operator/pkg/webhook"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"

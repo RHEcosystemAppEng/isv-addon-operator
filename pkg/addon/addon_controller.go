@@ -19,10 +19,11 @@ package addon
 import (
 	"context"
 	"fmt"
-	"github.com/example/isv-addon-operator/api/v1alpha1"
-	"github.com/example/isv-addon-operator/pkg/isv"
+	"github.com/isv-addon-operator/api/v1alpha1"
+	"github.com/isv-addon-operator/pkg/isv"
 	"github.com/mitchellh/mapstructure"
 	configv1 "github.com/openshift/api/config/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"reflect"
@@ -76,10 +78,9 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Secret
 	vault := &corev1.Secret{}
 	if err := r.Client.Get(ctx, types.NamespacedName{
-		Name:      isv.CommonISVInstance.GetISVPrefix() + "-addon",
+		Name:      "addon",
 		Namespace: req.Namespace,
 	}, vault); err != nil {
-
 		if k8serrors.IsNotFound(err) {
 			logger.Info("Addon Secret not found.")
 			return ctrl.Result{Requeue: true}, err
@@ -100,7 +101,7 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	finalizerName := isv.CommonISVInstance.GetISVPrefix() + "addons.example.com/finalizer"
+	finalizerName := isv.CommonISVInstance.GetAddonID()
 
 	// cleanup for deletion
 	if !addon.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -108,7 +109,7 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if controllerutil.ContainsFinalizer(addon, finalizerName) {
 			// finalizer exists, delete child enterprise
 			enterpriseDelete := &unstructured.Unstructured{}
-			enterpriseDelete.SetGroupVersionKind(desiredEnterprise.GetObjectKind().GroupVersionKind())
+			enterpriseDelete.SetGroupVersionKind(desiredEnterprise.GroupVersionKind())
 
 			if err := r.Client.Get(
 				ctx,
@@ -130,6 +131,10 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				}
 			}
 
+			if err := r.removeSelfCsv(ctx); err != nil {
+				return ctrl.Result{}, err
+			}
+
 			// deletion done, remove finalizer
 			controllerutil.RemoveFinalizer(addon, finalizerName)
 			if err := r.Client.Update(ctx, addon); err != nil {
@@ -144,13 +149,14 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// object is NOT currently being deleted, add finalizer
 	if !controllerutil.ContainsFinalizer(addon, finalizerName) {
 		controllerutil.AddFinalizer(addon, finalizerName)
-	}
-	if err := r.Client.Update(ctx, addon); err != nil {
-		logger.Error(err, "failed to set finalizer for new addon")
-		return ctrl.Result{}, err
+
+		if err := r.Client.Update(ctx, addon); err != nil {
+			logger.Error(err, "failed to set finalizer for new addon")
+			return ctrl.Result{}, err
+		}
 	}
 
-	//Fetch clusterversion instance
+	// Fetch clusterversion instance
 	cv := &configv1.ClusterVersion{}
 	if err := r.Client.Get(ctx, types.NamespacedName{
 		Name: "version",
@@ -205,21 +211,21 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	fedServiceMonitorName := addon.Name + "-federation"
+	// fedServiceMonitorName := addon.Name + "-federation"
 
-	// Deploy Federation ServiceMonitor
-	fedServiceMonitor := &promv1.ServiceMonitor{}
-	if err := r.Client.Get(ctx, types.NamespacedName{
-		Name:      fedServiceMonitorName,
-		Namespace: addon.Namespace,
-	}, fedServiceMonitor); err != nil && k8serrors.IsNotFound(err) {
-		logger.Info("Federation Service Monitor not found. Creating...")
-		fedServiceMonitor = r.DeployFederationServiceMonitor(fedServiceMonitorName, addon.Namespace, string(vault.Data["metrics"]))
-		if err := r.Client.Create(ctx, fedServiceMonitor); err != nil {
-			logger.Error(err, "Could not create Federation Service Monitor")
-			return ctrl.Result{Requeue: true}, fmt.Errorf("could not create federation service monitor: %v", err)
-		}
-	}
+	// // Deploy Federation ServiceMonitor
+	// fedServiceMonitor := &promv1.ServiceMonitor{}
+	// if err := r.Client.Get(ctx, types.NamespacedName{
+	// 	Name:      fedServiceMonitorName,
+	// 	Namespace: addon.Namespace,
+	// }, fedServiceMonitor); err != nil && k8serrors.IsNotFound(err) {
+	// 	logger.Info("Federation Service Monitor not found. Creating...")
+	// 	fedServiceMonitor = r.DeployFederationServiceMonitor(fedServiceMonitorName, addon.Namespace, string(vault.Data["metrics.yaml"]))
+	// 	if err := r.Client.Create(ctx, fedServiceMonitor); err != nil {
+	// 		logger.Error(err, "Could not create Federation Service Monitor")
+	// 		return ctrl.Result{Requeue: true}, fmt.Errorf("could not create federation service monitor: %v", err)
+	// 	}
+	// }
 
 	prometheusRuleName := addon.Name + "-rules"
 
@@ -230,7 +236,7 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		Namespace: addon.Namespace,
 	}, prometheusRule); err != nil && k8serrors.IsNotFound(err) {
 		logger.Info("Prometheus Rules not found. Creating...")
-		prometheusRule, err = r.DeployPrometheusRules(prometheusRuleName, addon.Namespace, vault.Data["rules"])
+		prometheusRule, err = r.DeployPrometheusRules(prometheusRuleName, addon.Namespace, vault.Data["rules.yaml"])
 		if err != nil {
 			logger.Error(err, "could not create prometheus rules")
 			return ctrl.Result{Requeue: true}, err
@@ -253,7 +259,7 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	current.SetGroupVersionKind(desiredEnterprise.GroupVersionKind())
 
 	// fetch the existing enterprise resource
-	if err := r.Client.Get(ctx, req.NamespacedName, current); err != nil {
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(&desiredEnterprise), current); err != nil {
 		if k8serrors.IsNotFound(err) {
 			// if current enterprise not found, create a new one
 			if err := r.Client.Create(ctx, &desiredEnterprise); err != nil {
@@ -278,7 +284,8 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// reconcile back to desired if current was changed
-	if !equality.Semantic.DeepDerivative(desiredEnterprise, current) {
+	setDesiredEnterpriseCRBasicFields(desiredEnterprise, current)
+	if !equality.Semantic.DeepDerivative(&desiredEnterprise, current) {
 		// NOTE equality should be based on business logic
 		if err := r.Client.Update(ctx, &desiredEnterprise); err != nil {
 			logger.Error(err, "failed reconciling enterprise cr, requeuing")
@@ -289,11 +296,17 @@ func (r *ISVAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
+func setDesiredEnterpriseCRBasicFields(desiredEnterprise unstructured.Unstructured, current *unstructured.Unstructured) {
+	desiredEnterprise.SetCreationTimestamp(current.GetCreationTimestamp())
+	desiredEnterprise.SetResourceVersion(current.GetResourceVersion())
+	desiredEnterprise.SetSelfLink(current.GetSelfLink())
+	desiredEnterprise.SetUID(current.GetUID())
+}
+
 // sets up the controller with the manager
 func (r *ISVAddonReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ISVAddon{}).
-		//Owns(&configv1.ClusterVersion{}).
 		Complete(r)
 }
 
@@ -372,7 +385,7 @@ func (r *ISVAddonReconciler) DeployPrometheusRules(prometheusRuleName string, pr
 	promRules.Kind = "PrometheusRule"
 	promRules.Name = prometheusRuleName
 	promRules.Namespace = prometheusRuleNamespace
-	promRules.Spec = *&promv1.PrometheusRuleSpec{
+	promRules.Spec = promv1.PrometheusRuleSpec{
 		Groups: []promv1.RuleGroup{
 			{
 				Name:  isv.CommonISVInstance.GetISVPrefix() + "_alert_rules",
@@ -394,50 +407,50 @@ func ConvertToIntOrStringFunc(f reflect.Type, t reflect.Type, data interface{}) 
 	return data, nil
 }
 
-func (r *ISVAddonReconciler) DeployFederationServiceMonitor(fedServiceMonitorName string, fedServiceMonitorNamespace string, metrics string) *promv1.ServiceMonitor {
+// func (r *StarburstAddonReconciler) DeployFederationServiceMonitor(fedServiceMonitorName string, fedServiceMonitorNamespace string, metrics string) *promv1.ServiceMonitor {
 
-	metric := make(map[string][]string)
-	metric["match[]"] = append(metric["match[]"], metrics)
+// 	metric := make(map[string][]string)
+// 	metric["match[]"] = append(metric["match[]"], metrics)
 
-	// create federated serviceMonitor
-	fedServiceMonitor := &promv1.ServiceMonitor{}
-	fedServiceMonitor.APIVersion = "monitoring.coreos.com/v1"
-	fedServiceMonitor.Kind = "ServiceMonitor"
-	fedServiceMonitor.Name = fedServiceMonitorName
-	fedServiceMonitor.Namespace = fedServiceMonitorNamespace
-	fedServiceMonitor.Spec = *&promv1.ServiceMonitorSpec{
-		JobLabel: "openshift-monitoring-federation",
-		NamespaceSelector: promv1.NamespaceSelector{
-			MatchNames: []string{
-				"openshift-monitoring",
-			},
-		},
-		Selector: metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"app.kubernetes.io/instance": "k8s",
-			},
-		},
-		Endpoints: []promv1.Endpoint{
-			{
-				BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
-				Port:            "web",
-				Path:            "/federate",
-				Interval:        "30s",
-				Scheme:          "https",
-				Params:          metric,
-				TLSConfig: &promv1.TLSConfig{
-					SafeTLSConfig: promv1.SafeTLSConfig{
-						InsecureSkipVerify: true,
-						ServerName:         "prometheus-k8s.openshift-monitoring.svc.cluster.local",
-					},
-					CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt",
-				},
-			},
-		},
-	}
+// 	// create federated serviceMonitor
+// 	fedServiceMonitor := &promv1.ServiceMonitor{}
+// 	fedServiceMonitor.APIVersion = "monitoring.coreos.com/v1"
+// 	fedServiceMonitor.Kind = "ServiceMonitor"
+// 	fedServiceMonitor.Name = fedServiceMonitorName
+// 	fedServiceMonitor.Namespace = fedServiceMonitorNamespace
+// 	fedServiceMonitor.Spec = promv1.ServiceMonitorSpec{
+// 		JobLabel: "openshift-monitoring-federation",
+// 		NamespaceSelector: promv1.NamespaceSelector{
+// 			MatchNames: []string{
+// 				"openshift-monitoring",
+// 			},
+// 		},
+// 		Selector: metav1.LabelSelector{
+// 			MatchLabels: map[string]string{
+// 				"app.kubernetes.io/instance": "k8s",
+// 			},
+// 		},
+// 		Endpoints: []promv1.Endpoint{
+// 			{
+// 				BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
+// 				Port:            "web",
+// 				Path:            "/federate",
+// 				Interval:        "30s",
+// 				Scheme:          "https",
+// 				Params:          metric,
+// 				TLSConfig: &promv1.TLSConfig{
+// 					SafeTLSConfig: promv1.SafeTLSConfig{
+// 						InsecureSkipVerify: true,
+// 						ServerName:         "prometheus-k8s.openshift-monitoring.svc.cluster.local",
+// 					},
+// 					CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt",
+// 				},
+// 			},
+// 		},
+// 	}
 
-	return fedServiceMonitor
-}
+// 	return fedServiceMonitor
+// }
 
 func (r *ISVAddonReconciler) DeployPrometheus(vaultSecretName string, tokenURL, remoteWriteURL, regex, clusterID, prometheusName, namespace string) *promv1.Prometheus {
 
@@ -447,9 +460,16 @@ func (r *ISVAddonReconciler) DeployPrometheus(vaultSecretName string, tokenURL, 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      prometheusName,
 			Namespace: namespace,
+			Labels: map[string]string{
+				"prometheus": "starburst",
+			},
 		},
 		Spec: promv1.PrometheusSpec{
-			//RuleSelector: prometheusSelector,
+			RuleSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "starburst",
+				},
+			},
 			CommonPrometheusFields: promv1.CommonPrometheusFields{
 				ExternalLabels: map[string]string{
 					"cluster_id": clusterID,
@@ -461,6 +481,9 @@ func (r *ISVAddonReconciler) DeployPrometheus(vaultSecretName string, tokenURL, 
 							{
 								Action: "keep",
 								Regex:  regex, //"csv_succeeded$|csv_abnormal$|cluster_version$|ALERTS$|subscription_sync_total|trino_.*$|jvm_heap_memory_used$|node_.*$|namespace_.*$|kube_.*$|cluster.*$|container_.*$",
+								SourceLabels: []promv1.LabelName{
+									"__name__",
+								},
 							},
 						},
 						URL: remoteWriteURL,
@@ -516,4 +539,39 @@ func fetchClusterID(cv *configv1.ClusterVersion) string {
 	//return "1v529ivvikohbpg8pgfihegcdjhudjng"
 	clusterID := cv.Spec.ClusterID
 	return string(clusterID)
+}
+
+func (r *ISVAddonReconciler) removeSelfCsv(ctx context.Context) error {
+	logger := log.FromContext(ctx).WithValues("Reconcile Step", "Addon CSV Deletion")
+	logger.Info("Cleanup Reconcile | Delete own CSV")
+
+	addonCsv, err := getCsvWithPrefix(r.Client, isv.CommonISVInstance.GetAddonCRNamespace(), isv.CommonISVInstance.GetAddonID())
+	if err != nil {
+		return err
+	}
+
+	err = r.Delete(ctx, addonCsv)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete StarburstAddon Operator CSV %s: %w", addonCsv.Name, err)
+	}
+
+	return nil
+}
+
+func getCsvWithPrefix(c client.Client, namespace string, prefix string) (*operatorsv1alpha1.ClusterServiceVersion, error) {
+
+	csvs := operatorsv1alpha1.ClusterServiceVersionList{}
+	err := c.List(context.TODO(), &csvs, &client.ListOptions{
+		Namespace: namespace,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, csv := range csvs.Items {
+		if strings.HasPrefix(csv.Name, prefix) {
+			return &csv, nil
+		}
+	}
+	return nil, k8serrors.NewNotFound(schema.ParseGroupResource(""), fmt.Sprintf("%v/%v*", namespace, prefix))
 }
